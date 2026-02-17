@@ -1,10 +1,11 @@
-from data_provider.data_loader import Dataset_Weather, Dataset_Finance, Dataset_Healthcare
+from data_provider.data_loader import Dataset_Weather, Dataset_Finance, Dataset_Healthcare, Dataset_AgriWebb
 from torch.utils.data import DataLoader
 
 data_dict = {
     'weather': Dataset_Weather,
     'finance': Dataset_Finance,
-    'healthcare': Dataset_Healthcare
+    'healthcare': Dataset_Healthcare,
+    'agriwebb': Dataset_AgriWebb
 }
 
 

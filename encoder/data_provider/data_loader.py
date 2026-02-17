@@ -1,4 +1,5 @@
 import os
+import json
 import numpy as np
 import pandas as pd
 import glob
@@ -7,13 +8,46 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from utils.timefeatures import time_features
-from sktime.datasets import load_from_tsfile_to_dataframe
+try:
+    from sktime.datasets import load_from_tsfile_to_dataframe
+except ImportError:
+    load_from_tsfile_to_dataframe = None
 import warnings
 
 import pickle as pkl
-from transformers import AutoTokenizer
+try:
+    from transformers import AutoTokenizer
+except ImportError:
+    AutoTokenizer = None
 
 warnings.filterwarnings('ignore')
+
+
+def _load_text_array(path: str) -> np.ndarray:
+    """Load text arrays from npy without assuming a specific NumPy major version."""
+    try:
+        # New format: plain unicode array, no pickle required.
+        return np.asarray(np.load(path, allow_pickle=False), dtype=str)
+    except ValueError:
+        # Legacy format: object array stored via pickle.
+        pass
+
+    try:
+        return np.asarray(np.load(path, allow_pickle=True), dtype=str)
+    except ModuleNotFoundError as exc:
+        if exc.name != "numpy._core":
+            raise
+
+        # Compatibility for object arrays pickled under NumPy 2.x.
+        import sys
+        import numpy.core as np_core
+        import numpy.core.multiarray as np_multiarray
+        import numpy.core.numeric as np_numeric
+
+        sys.modules.setdefault("numpy._core", np_core)
+        sys.modules.setdefault("numpy._core.multiarray", np_multiarray)
+        sys.modules.setdefault("numpy._core.numeric", np_numeric)
+        return np.asarray(np.load(path, allow_pickle=True), dtype=str)
 
     
 class Dataset_Weather(Dataset):
@@ -30,6 +64,8 @@ class Dataset_Weather(Dataset):
         
         self.lm_model_name = args.lm_model
         if self.lm_model_name in ['deberta', 'bert', 'roberta', 'distilbert']:
+            if AutoTokenizer is None:
+                raise ImportError("transformers is required for lm_model in ['deberta', 'bert', 'roberta', 'distilbert']")
             os.environ['TOKENIZERS_PARALLELISM'] = 'True'
             if args.lm_model == 'deberta':
                 self.tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-base')
@@ -117,6 +153,8 @@ class Dataset_Finance(Dataset):
         
         self.lm_model_name = args.lm_model
         if self.lm_model_name in ['deberta', 'bert', 'roberta', 'distilbert']:
+            if AutoTokenizer is None:
+                raise ImportError("transformers is required for lm_model in ['deberta', 'bert', 'roberta', 'distilbert']")
             os.environ['TOKENIZERS_PARALLELISM'] = 'True'
             if args.lm_model == 'deberta':
                 self.tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-base')
@@ -204,6 +242,8 @@ class Dataset_Healthcare(Dataset):
         
         self.lm_model_name = args.lm_model
         if self.lm_model_name in ['deberta', 'bert', 'roberta', 'distilbert']:
+            if AutoTokenizer is None:
+                raise ImportError("transformers is required for lm_model in ['deberta', 'bert', 'roberta', 'distilbert']")
             os.environ['TOKENIZERS_PARALLELISM'] = 'True'
             if args.lm_model == 'deberta':
                 self.tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-base')
@@ -267,6 +307,98 @@ class Dataset_Healthcare(Dataset):
         seq_x_time = self.time_series[i:i+self.seq_len]
         seq_y = self.labels[i]
             
+        return seq_x_time, seq_x_text, seq_y
+
+    def __len__(self):
+        return len(self.idx)
+
+
+class Dataset_AgriWebb(Dataset):
+    def __init__(self, args, flag='train'):
+        self.pred_len = 1
+        self.flag = flag
+
+        self.lm_model_name = args.lm_model
+        if self.lm_model_name in ['deberta', 'bert', 'roberta', 'distilbert']:
+            if AutoTokenizer is None:
+                raise ImportError("transformers is required for lm_model in ['deberta', 'bert', 'roberta', 'distilbert']")
+            os.environ['TOKENIZERS_PARALLELISM'] = 'True'
+            if args.lm_model == 'deberta':
+                self.tokenizer = AutoTokenizer.from_pretrained('microsoft/deberta-base')
+            elif args.lm_model == 'bert':
+                self.tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-base-cased")
+            elif args.lm_model == 'roberta':
+                self.tokenizer = AutoTokenizer.from_pretrained("roberta-base")
+            elif args.lm_model == 'distilbert':
+                self.tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+
+        self.data_path = args.data_path
+        if not os.path.isdir(self.data_path):
+            self.data_path = os.path.join('..', 'dataset', 'agriwebb', 'processed')
+        self.__read_data__()
+
+    def __read_data__(self):
+        x_time_path = os.path.join(self.data_path, 'x_time.npy')
+        x_text_path = os.path.join(self.data_path, 'x_text.npy')
+        y_path = os.path.join(self.data_path, 'y_class.npy')
+        split_path = os.path.join(self.data_path, 'splits.json')
+
+        if not (
+            os.path.exists(x_time_path)
+            and os.path.exists(x_text_path)
+            and os.path.exists(y_path)
+            and os.path.exists(split_path)
+        ):
+            raise FileNotFoundError(
+                f"Processed AgriWebb files are missing in: {self.data_path}"
+            )
+
+        x_time = np.load(x_time_path).astype(np.float64)
+        y = np.load(y_path)
+        x_text = _load_text_array(x_text_path)
+
+        self.time_series = torch.from_numpy(x_time)
+        self.labels = torch.tensor(y)
+        self.seq_len = self.time_series.shape[1]
+        self.max_seq_len = self.seq_len
+        self.num_feature = self.time_series.shape[2]
+        self.class_names = ['decrease', 'neutral', 'increase']
+
+        texts = [str(t) for t in x_text]
+        if self.lm_model_name in ['deberta', 'bert', 'roberta', 'distilbert']:
+            # Text summaries are short; 512 is sufficient and avoids unnecessary padding.
+            self.texts = self.tokenizer(texts, padding=True, truncation=True, max_length=512)
+        else:
+            self.texts = np.array(texts)
+
+        with open(split_path, 'r') as f:
+            splits = json.load(f)
+
+        if self.flag == 'TRAIN':
+            self.idx = np.array(splits['train'], dtype=np.int64)
+        elif self.flag == 'VAL':
+            self.idx = np.array(splits['val'], dtype=np.int64)
+        elif self.flag == 'TEST':
+            self.idx = np.array(splits['test'], dtype=np.int64)
+        elif self.flag == 'ALL':
+            self.idx = np.arange(len(self.labels), dtype=np.int64)
+        else:
+            raise ValueError(f'Unknown flag: {self.flag}')
+
+        class_train = self.labels[np.array(splits['train'], dtype=np.int64)]
+        self.class_freq = np.bincount(class_train, minlength=len(self.class_names))
+
+    def __getitem__(self, index):
+        i = self.idx[index]
+
+        if self.lm_model_name in ['deberta', 'bert', 'roberta', 'distilbert']:
+            seq_x_text = {key: torch.tensor(val[i]) for key, val, in self.texts.items()}
+        else:
+            seq_x_text = self.texts[i]
+
+        seq_x_time = self.time_series[i]
+        seq_y = self.labels[i]
+
         return seq_x_time, seq_x_text, seq_y
 
     def __len__(self):

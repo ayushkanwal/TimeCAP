@@ -1,0 +1,75 @@
+version: 1
+name: agriwebb_timecap_v1
+objective:
+  target_name: adg_7d
+  target_description: "Average daily gain over next 7 days using interpolated daily weight"
+  class_mapping:
+    decrease: 0
+    neutral: 1
+    increase: 2
+  thresholds_kg_per_day:
+    decrease_lt: -0.10
+    increase_gt: 0.10
+window:
+  history_days: 56
+  horizon_days: 7
+  anchor_policy: "observation_days_with_valid_horizon"
+split:
+  strategy: chronological
+  train_ratio: 0.60
+  val_ratio: 0.20
+  test_ratio: 0.20
+deduplication:
+  table: weights
+  key: [LIVESTOCK_ID, day]
+  keep_rule:
+    - highest_OBSERVATION_DATE
+    - highest_CREATION_DATE
+    - highest_RECORD_ID
+feature_groups:
+  numeric:
+    - weight_last_obs_kg
+    - days_since_last_weight
+    - age_months
+    - daily_rain_mm
+    - max_temp_c
+    - min_temp_c
+    - dtr_c
+    - amb_temp_c
+    - rh_tmax_pct
+    - rh_tmin_pct
+    - thi_daily
+    - load_mj_per_day
+    - paddock_land_size_ha
+    - paddock_arable_land_size_ha
+    - active_move_flag
+  categorical_one_hot:
+    - record_input_type
+    - sex
+    - neutered
+    - major_category
+    - age_class
+    - canon_breed
+    - pasture_state
+imputation:
+  deterministic_steps:
+    - per_animal_forward_fill
+    - per_animal_rolling_median_window_7
+    - global_train_median
+  missing_flags: true
+text_summary:
+  source: rule_based
+  style: concise
+  max_sentences: 5
+outputs:
+  - x_time.npy
+  - x_text.npy
+  - y_class.npy
+  - y_adg_7d.npy
+  - sample_meta.parquet
+  - feature_names.json
+  - splits.json
+  - data_quality_report.json
+notes:
+  - "Treatments are excluded in v1 because no treatment-events table is available in this drop."
+  - "REGION_ID and NRM_ID are treated as equivalent namespaces and excluded from model features."
