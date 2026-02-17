@@ -13,3 +13,6 @@ encoder/results/
 
 # AgriWebb generated artifacts (large/local)
 dataset/agriwebb/processed/
+
+# AgriWebb raw/source tables (local/private)
+dataset/agriwebb/**/*.csv
