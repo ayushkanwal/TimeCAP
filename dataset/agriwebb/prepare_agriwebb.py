@@ -277,7 +277,7 @@ def compute_class_label(adg: pd.Series, threshold: float) -> np.ndarray:
     return y
 
 
-def build_summary(window: pd.DataFrame, horizon_days: int, adg_value: float, adg_class: int) -> str:
+def build_summary(window: pd.DataFrame, horizon_days: int) -> str:
     last = window.iloc[-1]
     first = window.iloc[0]
 
@@ -295,8 +295,6 @@ def build_summary(window: pd.DataFrame, horizon_days: int, adg_value: float, adg
         elif weight_end < weight_start - 1:
             trend = "downward"
 
-    class_name = {0: "decrease", 1: "neutral", 2: "increase"}.get(int(adg_class), "unknown")
-
     parts = [
         f"Over the last {len(window)} days, the animal's recent weight trajectory was {trend}.",
         f"Cumulative rainfall in this window was {rain_total:.1f} mm and the average ambient temperature was {temp_mean:.1f} C." if pd.notna(temp_mean) else
@@ -304,7 +302,7 @@ def build_summary(window: pd.DataFrame, horizon_days: int, adg_value: float, adg
         f"Average paddock load during active move periods was {load_mean:.1f} MJ/day." if pd.notna(load_mean) else
         "No active paddock load signal was recorded in this window.",
         f"Current animal context: sex={last['sex']}, age_class={last['age_class']}, record_input_type={last['record_input_type']}.",
-        f"Model target framing: next {horizon_days}-day ADG class is {class_name} (adg_7d={adg_value:.3f} kg/day).",
+        f"Use this context to forecast the animal growth class over the next {horizon_days} days.",
     ]
     return " ".join(parts)
 
@@ -463,7 +461,7 @@ def build_samples(
             y_class_list.append(adg_class)
 
             window = panel.iloc[start:stop]
-            x_text_list.append(build_summary(window, horizon_days, adg_value, adg_class))
+            x_text_list.append(build_summary(window, horizon_days))
 
             meta_rows.append(
                 {
@@ -567,7 +565,11 @@ def save_outputs(
     np.save(output_dir / "y_class.npy", samples.y_class)
     np.save(output_dir / "y_adg_7d.npy", samples.y_adg)
 
-    samples.sample_meta.to_parquet(output_dir / "sample_meta.parquet", index=False)
+    try:
+        samples.sample_meta.to_parquet(output_dir / "sample_meta.parquet", index=False)
+    except ImportError:
+        # Keep preprocessing runnable without optional parquet engines.
+        samples.sample_meta.to_csv(output_dir / "sample_meta.csv", index=False)
 
     with open(output_dir / "feature_names.json", "w", encoding="utf-8") as f:
         json.dump(feature_names, f, indent=2)

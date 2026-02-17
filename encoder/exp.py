@@ -214,7 +214,7 @@ class Exp_Classification(Exp_Basic):
         return self.model
 
     def test(self, setting, test=0):
-        all_data, all_loader = self._get_data(flag='ALL')
+        test_data, test_loader = self._get_data(flag='TEST')
         
         print('loading model')
         self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
@@ -223,7 +223,7 @@ class Exp_Classification(Exp_Basic):
         
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x_time, batch_x_text, label) in enumerate(all_loader):
+            for i, (batch_x_time, batch_x_text, label) in enumerate(test_loader):
                 batch_x_time = batch_x_time.float().to(self.device)
                 label = label.to(self.device)
 

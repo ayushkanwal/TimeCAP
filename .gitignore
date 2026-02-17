@@ -10,6 +10,7 @@ __pycache__/
 encoder/checkpoints/
 encoder/logs/
 encoder/results/
+encoder/embeddings/
 
 # AgriWebb generated artifacts (large/local)
 dataset/agriwebb/processed/
