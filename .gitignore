@@ -1,0 +1,15 @@
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+
+# OS/editor
+.DS_Store
+.ipynb_checkpoints/
+
+# Training/runtime artifacts
+encoder/checkpoints/
+encoder/logs/
+encoder/results/
+
+# AgriWebb generated artifacts (large/local)
+dataset/agriwebb/processed/
